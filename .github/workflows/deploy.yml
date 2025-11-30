@@ -1,0 +1,48 @@
+name: Deploy Django App to EC2
+
+# Trigger deployment on push to main branch
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    # Step 1: Checkout the code from GitHub
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    # Step 2: Deploy to EC2
+    - name: Deploy to EC2
+      env:
+        SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        EC2_PUBLIC_IP: ${{ secrets.EC2_PUBLIC_IP }}
+      run: |
+        # Save the private key
+        echo "$SSH_PRIVATE_KEY" > key.pem
+        chmod 600 key.pem
+
+        # SSH into EC2 and deploy
+        ssh -o StrictHostKeyChecking=no -i key.pem ubuntu@$EC2_PUBLIC_IP << 'EOF'
+          cd /home/ubuntu/django_cocker
+
+          # Reset any local changes and pull latest code
+          git reset --hard
+          git pull origin main
+
+          # Activate the EC2 virtual environment
+          source /home/ubuntu/django_cocker/venv/bin/activate
+
+          # Install any new dependencies
+          pip install -r requirements.txt
+
+          # Collect static files
+          python manage.py collectstatic --noinput
+
+          # Restart services
+          sudo systemctl restart gunicorn
+          sudo systemctl restart nginx
+        EOF
